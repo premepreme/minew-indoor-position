@@ -8,13 +8,16 @@ host = settings.MQTT_HOST
 port = str(settings.MQTT_PORT)
 mac_devices = settings.DEVICE_MACS
 mac_gateways = settings.GATEWAY_MACS
+mac_mg3 = settings.MG3_MACS
 
 
 def on_connect(client, userdata, flags, reason_code, properties):  # noqa: ARG001
     print(f"Connected with result code {reason_code}")
 
-    for mac in mac_gateways:
+    for mac in mac_mg3:
         client.subscribe(f"/mg3/{mac}/status")
+    for mac in mac_gateways:
+        client.subscribe(f"/gw/{mac}/status")
 
 
 def on_message(client, userdata, msg):  # noqa: ARG001
@@ -22,11 +25,14 @@ def on_message(client, userdata, msg):  # noqa: ARG001
     for data in json.loads(data_str):
         if data.get("type") == "Gateway":
             pass
-        elif data.get("type") is None:
+        elif data.get("type") is None or data.get("type") == "iBeacon":
             if data.get("mac") in mac_devices:
                 gateway_name = str(msg.topic).split("/")[2]
                 device_name = data.get("mac")
                 enqueue(value=data.get("rssi"), key=f"{device_name}_{gateway_name}")
+        # elif data.get("type") == "iBeacon":
+        #     if data.get("mac") in mac_devices:
+        #         print(data)
 
 
 if __name__ == "__main__":

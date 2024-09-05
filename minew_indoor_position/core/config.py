@@ -41,6 +41,7 @@ class Settings(BaseSettings):
 
     # MAC Addresses
     GATEWAY_MACS: Annotated[list[str] | str, BeforeValidator(gateway_parse_cors)] = []
+    MG3_MACS: Annotated[list[str] | str, BeforeValidator(gateway_parse_cors)] = []
     DEVICE_MACS: Annotated[list[str] | str, BeforeValidator(device_parse_cors)] = []
 
 
