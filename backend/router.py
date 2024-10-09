@@ -1,19 +1,38 @@
-from fastapi import APIRouter, HTTPException
-from sqlmodel import Session, create_engine
 import json
 import uuid
+
+from fastapi import APIRouter, HTTPException
+from models.gateway import Gateway
 from models.gateway_config import GatewayConfig
 from models.mac_address import MACAddress
+from sqlmodel import Session, create_engine
 from utility import mqtt_manager
-from models.gateway import Gateway
 
 DATABASE_URL = "sqlite:///./gateway_data.db"
 engine = create_engine(DATABASE_URL)
 combined_router = APIRouter()
 
+
 @combined_router.get("/macs")
 async def get_macs():
     return mqtt_manager.mac_data
+
+
+@combined_router.get("/macs/data/all")
+async def get_all_mac_data():
+    if not mqtt_manager.mqtt_data_store:
+        raise HTTPException(status_code=404, detail="No data found in mqtt_data_store.")
+    return mqtt_manager.mqtt_data_store  # Return the entire store
+
+
+@combined_router.get("/macs/data/{mac}")
+async def get_mac_data(mac: str):
+    if mac not in mqtt_manager.mqtt_data_store:
+        raise HTTPException(
+            status_code=404, detail=f"No data found for MAC address {mac}."
+        )
+    return mqtt_manager.mqtt_data_store[mac]
+
 
 @combined_router.post("/macs")
 async def add_mac(mac: MACAddress):
@@ -23,10 +42,15 @@ async def add_mac(mac: MACAddress):
     mac_address = mac.mac_address
 
     if category not in mqtt_manager.mac_data:
-        raise HTTPException(status_code=400, detail="Invalid category. Must be 'gw' or 'mg3'.")
+        raise HTTPException(
+            status_code=400, detail="Invalid category. Must be 'gw' or 'mg3'."
+        )
 
     if mac_address in mqtt_manager.mac_data[category]:
-        raise HTTPException(status_code=400, detail=f"MAC address {mac_address} already exists in {category}.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"MAC address {mac_address} already exists in {category}.",
+        )
 
     mqtt_manager.mac_data[category].append(mac_address)
 
@@ -52,10 +76,17 @@ async def add_mac(mac: MACAddress):
 
     return {"message": f"MAC address {mac_address} added to {category}"}
 
+
 @combined_router.delete("/macs/{category}/{mac_address}")
 async def delete_mac(category: str, mac_address: str):
-    if category not in mqtt_manager.mac_data or mac_address not in mqtt_manager.mac_data[category]:
-        raise HTTPException(status_code=404, detail=f"MAC address {mac_address} not found in {category}.")
+    if (
+        category not in mqtt_manager.mac_data
+        or mac_address not in mqtt_manager.mac_data[category]
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail=f"MAC address {mac_address} not found in {category}.",
+        )
 
     mqtt_manager.mac_data[category].remove(mac_address)
 
@@ -83,13 +114,24 @@ async def check_gateway(gateway_mac: str):
     message = {"code": 200, "message": "success", "requestId": request_id}
 
     if gateway_mac in mqtt_manager.mac_data["gw"]:
-        mqtt_manager.mqtt_client.publish(f"/gw/{gateway_mac}/action", json.dumps(message))
+        mqtt_manager.mqtt_client.publish(
+            f"/gw/{gateway_mac}/action", json.dumps(message)
+        )
     elif gateway_mac in mqtt_manager.mac_data["mg3"]:
-        mqtt_manager.mqtt_client.publish(f"/mg3/{gateway_mac}/action", json.dumps(message))
+        mqtt_manager.mqtt_client.publish(
+            f"/mg3/{gateway_mac}/action", json.dumps(message)
+        )
     else:
-        raise HTTPException(status_code=404, detail=f"MAC address {gateway_mac} not found in 'gw' or 'mg3'.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"MAC address {gateway_mac} not found in 'gw' or 'mg3'.",
+        )
 
-    return {"message": f"Heartbeat message sent to gateway {gateway_mac}", "requestId": request_id}
+    return {
+        "message": f"Heartbeat message sent to gateway {gateway_mac}",
+        "requestId": request_id,
+    }
+
 
 @combined_router.get("/gateway/check-online/{gateway_mac}")
 async def get_gateway_status(gateway_mac: str):
@@ -99,16 +141,23 @@ async def get_gateway_status(gateway_mac: str):
     else:
         return {"gateway_mac": gateway_mac, "status": "offline"}
 
+
 @combined_router.get("/gateway/config/{gateway_mac}")
 async def get_gateway_config(gateway_mac: str):
     if gateway_mac in mqtt_manager.gateway_config_store:
-        return {"gateway_mac": gateway_mac, "config": mqtt_manager.gateway_config_store[gateway_mac]}
+        return {
+            "gateway_mac": gateway_mac,
+            "config": mqtt_manager.gateway_config_store[gateway_mac],
+        }
 
     request_id = str(uuid.uuid4())
     message = {"action": "getConfig", "requestId": request_id}
 
     mqtt_manager.mqtt_client.publish(f"/gw/{gateway_mac}/action", json.dumps(message))
-    return {"message": f"Configuration request sent to gateway {gateway_mac}", "requestId": request_id}
+    return {
+        "message": f"Configuration request sent to gateway {gateway_mac}",
+        "requestId": request_id,
+    }
 
 
 @combined_router.put("/gateway/config/{gateway_mac}")
@@ -120,11 +169,17 @@ async def set_gateway_config(gateway_mac: str, config: GatewayConfig):
         full_config = mqtt_manager.gateway_config_store[gateway_mac]
     else:
         raise HTTPException(status_code=404, detail="Gateway configuration not found.")
-    
+
     # Only update the rssi and regex_mac in the filter section
     filter_params = full_config.get("filter", {}).get("params", {})
-    filter_params["rssi"] = config.rssi if config.rssi is not None else filter_params.get("rssi")
-    filter_params["regex_mac"] = config.regex_mac if config.regex_mac is not None else filter_params.get("regex_mac")
+    filter_params["rssi"] = (
+        config.rssi if config.rssi is not None else filter_params.get("rssi")
+    )
+    filter_params["regex_mac"] = (
+        config.regex_mac
+        if config.regex_mac is not None
+        else filter_params.get("regex_mac")
+    )
 
     # Update the full config with the modified filter params
     full_config["filter"]["params"] = filter_params
@@ -142,14 +197,13 @@ async def set_gateway_config(gateway_mac: str, config: GatewayConfig):
         },
         "requestId": request_id,
     }
-    
+
     # Publish the message to the gateway's action topic
     mqtt_manager.mqtt_client.publish(f"/gw/{gateway_mac}/action", json.dumps(message))
-    
+
     # Return the entire updated configuration
     return {
         "message": f"Configuration updated for gateway {gateway_mac}.",
         "requestId": request_id,
-        "config": full_config
+        "config": full_config,
     }
-

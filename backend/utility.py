@@ -1,8 +1,8 @@
-# utility.py
 import json
+
+from datetime import datetime, timezone, timedelta
 import paho.mqtt.client as mqtt
 from typing import Dict, List
-from datetime import datetime
 
 class MQTTManager:
     def __init__(self):
@@ -48,12 +48,13 @@ class MQTTManager:
                 pass
             elif data.get("type") is None or data.get("type") == "iBeacon":
                 mac = data.get("mac").lower()
-                self.mqtt_data_store.setdefault(mac, []).append({
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "mac": mac,
-                    "rssi": data.get("rssi"),
-                    "rawData": data.get("rawData"),
-                })
+                self.mqtt_data_store.setdefault(mac, []).append(
+                    {
+                    "timestamp": datetime.now(timezone(timedelta(hours=7))).isoformat(),
+                        "mac": mac,
+                        "rssi": data.get("rssi"),
+                    }
+                )
                 if len(self.mqtt_data_store[mac]) > 100:
                     self.mqtt_data_store[mac] = self.mqtt_data_store[mac][-100:]
 
@@ -67,5 +68,5 @@ class MQTTManager:
             self.mqtt_client.subscribe(f"/gw/{mac}/response")
             print("Subscribed to", f"/gw/{mac}")
 
-# Initialize the MQTT Manager
+
 mqtt_manager = MQTTManager()
